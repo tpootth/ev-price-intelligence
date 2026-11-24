@@ -2,57 +2,60 @@
 // Classic-MMORPG status windows for the evaluation results, plus title bars for every panel.
 (function () {
   const BASE = 20891.5; // training-median baseline MAE (USD)
-  // "Accuracy vs baseline": 100% = perfect, 0% = as bad as guessing the median. Log scale so both ends stay readable.
-  const acc = err => Math.max(0, Math.min(100, (1 - Math.log10(err + 1) / Math.log10(BASE + 1)) * 100));
   const btns = '<span class="btns" aria-hidden="true"><i></i><i></i></span>';
   const title = (id, text) => `<div class="win-title" id="${id}"><span>${text}</span>${btns}</div>`;
   const gline = (tag, cls, pct, val, label) =>
     `<div class="gline"><span class="tag">${tag}</span><div class="gauge ${cls}" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct.toFixed(1)}" aria-label="${esc(label)}"><i data-w="${pct.toFixed(2)}"></i></div><span class="val">${val}</span></div>`;
 
-  // 1) Party status: seen vs unseen groups
+  // 1) Party window: seen vs unseen. One honest gauge: error as a share of the naive guess.
   const party = $('#rpg-party');
   if (party) {
-    const seen = 8.85, unseen = 11130;
-    party.innerHTML = title('rpg-party-t', 'Party · Seen vs unseen models') + `
-      <div class="unit"><div class="portrait" aria-hidden="true">S</div><div>
-        <div class="who"><b>Seen models</b><span class="lv">Lv. 9,645</span></div>
-        ${gline('ACC', 'hp', acc(seen), acc(seen).toFixed(0) + '%', 'Accuracy versus baseline for seen models')}
-        ${gline('ERR', 'exp', seen / BASE * 100, '$' + fmt(seen, 2), 'Mean absolute error for seen models')}
-        <span class="status-fx good">✦ Buff: model already seen in training</span></div></div>
-      <div class="unit"><div class="portrait" aria-hidden="true">?</div><div>
-        <div class="who"><b>Unseen models</b><span class="lv">Lv. 6</span></div>
-        ${gline('ACC', 'low', acc(unseen), acc(unseen).toFixed(0) + '%', 'Accuracy versus baseline for unseen models')}
-        ${gline('ERR', 'exp', unseen / BASE * 100, '$' + fmt(unseen), 'Mean absolute error for unseen models')}
-        <span class="status-fx">⚠ Debuff: only 6 test records</span></div></div>
-      <p class="foot">Lv = test records. ACC = accuracy vs guessing the median price ($${fmt(BASE, 0)} error), log scale.</p>`;
+    const unit = (icon, name, lv, err, cls, fx, fxCls) => `
+      <div class="unit"><div class="portrait" aria-hidden="true">${icon}</div><div>
+        <div class="who"><b>${name}</b><span class="lv">Lv. ${lv}</span></div>
+        <div class="bignum">$${fmt(err, err < 100 ? 2 : 0)}<small>average miss</small></div>
+        ${gline('ERR', cls, err / BASE * 100, (err / BASE * 100).toFixed(err / BASE < .01 ? 2 : 0) + '%', 'Error as a share of the naive guess')}
+        <span class="status-fx ${fxCls}">${fx}</span></div></div>`;
+    party.innerHTML = title('rpg-party-t', 'Party · Seen vs unseen models') +
+      unit('✓', 'Seen models', '9,645', 8.85, 'hp', '✦ Buff · already met in training', 'good') +
+      unit('?', 'Unseen models', '6', 11130, 'low', '⚠ Debuff · only 6 test records', '') +
+      `<p class="explain">The bar shows error against a naive guess (always the median price, $${fmt(BASE, 0)} off). Shorter is better. On known models the network is almost exact. On new models it still misses by about half the naive error.</p>`;
   }
 
-  // 2) Character status: final test evaluation
+  // 2) Status window: two meaningful gauges, the rest as stats and a plain explanation.
   const st = $('#rpg-stats');
   if (st) {
-    const rows = [['MAE', '$15.77'], ['RMSE', '$731.60'], ['Median err', '$0.30'], ['P90 err', '$1.90'], ['Baseline', '$20,891.50'], ['Test rows', '9,651']];
+    const rows = [['MAE', '$15.77'], ['Median miss', '$0.30'], ['90% of misses ≤', '$1.90'], ['RMSE', '$731.60'], ['Naive guess', '$20,891.50'], ['Test rows', '9,651']];
     st.innerHTML = title('rpg-stats-t', 'Status · Final test evaluation') + `
       ${gline('HP', 'hp', 99.91, 'R² 0.9991', 'R squared 0.9991')}
       ${gline('SP', 'sp', 99.93, '99.93%', 'Share of predictions within 1,000 dollars')}
-      ${gline('EXP', 'exp', (1 - 15.77 / BASE) * 100, '−99.9% err', 'Error reduction versus baseline')}
-      ${gline('DMG', 'low', 731.6 / BASE * 100, '$731.60', 'RMSE as share of baseline error')}
       <div class="stat-grid">${rows.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('')}</div>
-      <p class="foot">HP = R² · SP = within $1,000 · EXP = error cut vs baseline · DMG = rare big misses (RMSE).</p>`;
+      <p class="explain"><b>HP</b> = how much price variation the model explains. <b>SP</b> = predictions within $1,000. Typical misses are cents, but RMSE ($731.60) shows a few large misses still happen.</p>`;
   }
 
-  // 3) Item window: recorded test example
+  // 3) Item window: a price card instead of two identical full bars.
   const it = $('#rpg-item');
   if (it) {
-    const price = 42000, pred = 42004.074, miss = pred - price;
+    const price = 42000, pred = 42004.074;
     it.innerHTML = title('rpg-item-t', 'Item · Recorded test example') + `
       <div class="item"><div class="slot"><img src="img/cars/bmw-i3.jpg" alt="BMW i3" loading="lazy" width="640" height="400"></div>
       <div class="desc"><div class="iname">BMW i3 · 2020 · PHEV</div>
         <div class="rarity">Test sample #1</div>
-        ${gline('ATK', 'exp', 100, '$' + fmt(price), 'Dataset price')}
-        ${gline('PRD', 'sp', 100, '$' + fmt(pred), 'Network prediction')}
-        <div style="margin-top:8px">Miss by <span class="dmg miss">$${fmt(miss, 2)}</span></div>
+        <div class="price-pair"><div><small>Dataset price</small><b>$${fmt(price)}</b></div><div><small>Network says</small><b>$${fmt(pred)}</b></div></div>
+        <div class="miss-row">Miss <span class="dmg miss">$${fmt(pred - price, 2)}</span></div>
       </div></div>
-      <p class="foot">One saved example; photo is an earlier i3 for illustration.</p>`;
+      <p class="explain">One saved example from the test set: the prediction lands within a few dollars. Photo shows an earlier i3 for illustration.</p>`;
+  }
+
+  // Validation: a leaderboard reads better than three nearly identical bars
+  const val = $('#validation');
+  if (val && data.validation) {
+    const rows = [...data.validation].sort((a, b) => a.maeUSD - b.maeUSD), worst = rows[rows.length - 1].maeUSD;
+    const medal = ['🥇', '🥈', '🥉'];
+    val.innerHTML = `<ol class="board">${rows.map((r, i) => `<li${i === 0 ? ' class="win"' : ''}><span class="m" aria-hidden="true">${medal[i] || i + 1}</span><span class="n">${esc(r.name)}${i === 0 ? ' <em>chosen</em>' : ''}</span><b>$${fmt(r.maeUSD, 2)}</b><small>${i === rows.length - 1 ? 'reference' : '−' + ((1 - r.maeUSD / worst) * 100).toFixed(1) + '%'}</small></li>`).join('')}</ol>`;
+    const cap = val.previousElementSibling;
+    if (cap && cap.classList.contains('caption')) cap.textContent = 'Validation error (MAE, USD) · lower wins.';
+    val.insertAdjacentHTML('afterend', '<p class="caption" style="margin:0 0 -12px">Data split · train / validation / test</p>');
   }
 
   // Title bars on regular panels (use the panel's first heading)
